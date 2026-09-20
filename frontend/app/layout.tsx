@@ -1,0 +1,45 @@
+import type { Metadata } from "next";
+import "./globals.css";
+import { CartProvider } from "@/context/CartContext";
+import Navbar from "@/components/Navbar";
+import Footer from "@/components/Footer";
+import CartDrawer from "@/components/CartDrawer";
+import WhatsAppFloat from "@/components/WhatsAppFloat";
+
+export const metadata: Metadata = {
+  metadataBase: new URL(
+    process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000",
+  ),
+  title: {
+    default: "PataVida 🐾 | Tienda y Veterinaria",
+    template: "%s",
+  },
+  description:
+    "Alimento, accesorios y servicios veterinarios para tu mascota. Envío a domicilio. Tienda demo full-stack: Next.js + Django + PostgreSQL.",
+  openGraph: {
+    title: "PataVida | Tienda y Veterinaria",
+    description:
+      "Alimentos, accesorios y atención veterinaria para perros y gatos.",
+    type: "website",
+    locale: "es_CO",
+  },
+};
+
+export default function RootLayout({
+  children,
+}: Readonly<{ children: React.ReactNode }>) {
+  return (
+    <html lang="es" className="h-full antialiased">
+      <body className="flex min-h-full flex-col">
+        {/* CartProvider comparte el carrito con toda la app */}
+        <CartProvider>
+          <Navbar />
+          <main className="flex-1">{children}</main>
+          <Footer />
+          <CartDrawer />
+          <WhatsAppFloat />
+        </CartProvider>
+      </body>
+    </html>
+  );
+}
