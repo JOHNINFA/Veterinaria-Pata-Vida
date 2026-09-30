@@ -30,7 +30,7 @@ const SLIDES = [
     titulo: "Cuidamos su salud",
     resalte: "como familia",
     texto: "Consultas, vacunación, desparasitación y peluquería con veterinarios certificados.",
-    cta: { label: "Agendar cita", href: "/productos?categoria=veterinaria" },
+    cta: { label: "Agendar cita", href: "/veterinaria#cita" },
   },
   {
     img: "/banners/banner3.jpg",

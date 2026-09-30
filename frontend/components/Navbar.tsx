@@ -7,6 +7,7 @@ import { useCart } from "@/context/CartContext";
 const LINKS = [
   { href: "/", label: "Inicio" },
   { href: "/productos", label: "Productos" },
+  { href: "/veterinaria", label: "Veterinaria" },
   { href: "/quienes-somos", label: "Quiénes somos" },
   { href: "/contacto", label: "Contacto" },
 ];

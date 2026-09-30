@@ -20,9 +20,12 @@ export default function Footer() {
           <ul className="space-y-2 text-sm">
             <li><Link href="/" className="hover:text-accent">Inicio</Link></li>
             <li><Link href="/productos" className="hover:text-accent">Productos</Link></li>
+            <li><Link href="/veterinaria" className="hover:text-accent">Veterinaria</Link></li>
             <li><Link href="/quienes-somos" className="hover:text-accent">Quiénes somos</Link></li>
             <li><Link href="/carrito" className="hover:text-accent">Carrito</Link></li>
             <li><Link href="/contacto" className="hover:text-accent">Contacto</Link></li>
+            <li><Link href="/politica-datos" className="hover:text-accent">Política de datos</Link></li>
+            <li><Link href="/panel" className="text-white/50 hover:text-accent">🔒 Acceso personal clínica</Link></li>
           </ul>
         </div>
 

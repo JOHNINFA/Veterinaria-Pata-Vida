@@ -10,6 +10,37 @@ interface Paginado<T> {
   results: T[];
 }
 
+export interface Veterinario {
+  id: number;
+  nombre: string;
+  matricula: string;
+  especialidad: string;
+  bio: string;
+  foto: string;
+}
+
+export interface SolicitudCitaPayload {
+  nombre_tutor: string;
+  telefono: string;
+  email: string;
+  nombre_mascota: string;
+  especie: "PERRO" | "GATO" | "AVE" | "CONEJO" | "ROEDOR" | "REPTIL" | "OTRO";
+  fecha_preferida: string;
+  motivo: string;
+  acepta_datos: boolean;
+}
+
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    public status: number,
+    public fields: Record<string, string[]> = {},
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
 async function getJSON<T>(url: string): Promise<T> {
   const res = await fetch(url, { cache: "no-store" }); // siempre datos frescos
   if (!res.ok) throw new Error(`Error ${res.status} al pedir ${url}`);
@@ -42,6 +73,26 @@ export async function getProducto(slug: string): Promise<Producto | null> {
   });
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`Error ${res.status} al pedir el producto`);
+  return res.json();
+}
+
+export async function getVeterinarios(): Promise<Veterinario[]> {
+  const data = await getJSON<Paginado<Veterinario>>(`${API}/clinica/veterinarios/`);
+  return data.results;
+}
+
+export async function crearSolicitudCita(payload: SolicitudCitaPayload) {
+  const res = await fetch(`${API}/clinica/solicitudes-cita/`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) {
+    const fields = (await res.json().catch(() => ({}))) as Record<string, string[]>;
+    throw new ApiError("No se pudo enviar la solicitud", res.status, fields);
+  }
+
   return res.json();
 }
 
