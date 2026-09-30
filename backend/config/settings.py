@@ -51,6 +51,7 @@ INSTALLED_APPS = [
     # Propias
     "productos",
     "pedidos",
+    "clinica",
 ]
 
 MIDDLEWARE = [
@@ -138,9 +139,28 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # --- Django REST Framework ---
 REST_FRAMEWORK = {
+    # La tienda es pública (AllowAny por defecto); el módulo clínico declara sus
+    # propios permisos por rol en clinica/permissions.py.
     "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.AllowAny"],
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "rest_framework_simplejwt.authentication.JWTAuthentication",
+    ],
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 50,
+    # Límites anti-abuso: intentos de login y formulario público de citas.
+    "DEFAULT_THROTTLE_RATES": {
+        "login": "10/minute",
+        "solicitudes": "5/hour",
+    },
+}
+
+# --- JWT (panel veterinario) ---
+from datetime import timedelta  # noqa: E402
+
+SIMPLE_JWT = {
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=30),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=1),
+    "UPDATE_LAST_LOGIN": True,
 }
 
 

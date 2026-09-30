@@ -27,3 +27,5 @@ services:
         sync: false
       - key: DJANGO_SUPERUSER_PASSWORD
         sync: false
+      - key: CLINICA_DEMO_PASSWORD
+        sync: false
