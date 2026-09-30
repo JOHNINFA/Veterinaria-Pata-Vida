@@ -1,10 +1,5 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import { CartProvider } from "@/context/CartContext";
-import Navbar from "@/components/Navbar";
-import Footer from "@/components/Footer";
-import CartDrawer from "@/components/CartDrawer";
-import WhatsAppFloat from "@/components/WhatsAppFloat";
 
 export const metadata: Metadata = {
   metadataBase: new URL(
@@ -31,14 +26,8 @@ export default function RootLayout({
   return (
     <html lang="es" className="h-full antialiased">
       <body className="flex min-h-full flex-col">
-        {/* CartProvider comparte el carrito con toda la app */}
-        <CartProvider>
-          <Navbar />
-          <main className="flex-1">{children}</main>
-          <Footer />
-          <CartDrawer />
-          <WhatsAppFloat />
-        </CartProvider>
+        {/* La tienda y el panel veterinario tienen cada uno su propio layout */}
+        {children}
       </body>
     </html>
   );
