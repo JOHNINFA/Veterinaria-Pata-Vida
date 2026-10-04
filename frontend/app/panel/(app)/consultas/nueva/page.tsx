@@ -1,17 +1,22 @@
 "use client";
 
-import { use, useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { EMOJI_ESPECIE, panelFetch, type Paciente } from "@/lib/clinica";
 import ConsultaForm from "@/components/panel/ConsultaForm";
 import { useSesion } from "@/components/panel/SesionContext";
 import { Aviso, Cargando, Encabezado } from "@/components/panel/ui";
 
-export default function NuevaConsultaPage({ searchParams }: {
-  searchParams: Promise<{ paciente?: string; cita?: string }>;
-}) {
-  const { paciente: pacienteId, cita } = use(searchParams);
+export default function NuevaConsultaPage() {
+  // La página se genera estática: los parámetros de la URL se leen en el navegador.
+  return <Suspense fallback={<Cargando />}><NuevaConsultaPageContenido /></Suspense>;
+}
+
+function NuevaConsultaPageContenido() {
+  const busqueda = useSearchParams();
+  const pacienteId = busqueda.get("paciente") ?? undefined;
+  const cita = busqueda.get("cita") ?? undefined;
   const yo = useSesion();
   const router = useRouter();
   const [paciente, setPaciente] = useState<Paciente | null>(null);

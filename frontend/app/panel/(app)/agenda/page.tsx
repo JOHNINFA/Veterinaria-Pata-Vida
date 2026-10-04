@@ -3,9 +3,9 @@
 // Agenda del día: las citas confirmadas y en qué paso va cada una.
 //   ① Paciente registrado → ② Consulta firmada → ③ Cobro pagado
 // El botón de cada tarjeta lleva al siguiente paso.
-import { use, useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   EMOJI_ESPECIE, ESPECIES, ESTADOS_COBRO, panelFetch, pesos, whatsappA, type Paginado, type SolicitudCita,
 } from "@/lib/clinica";
@@ -23,8 +23,14 @@ function Paso({ n, texto, hecho, actual }: { n: number; texto: string; hecho: bo
   );
 }
 
-export default function AgendaPage({ searchParams }: { searchParams: Promise<{ fecha?: string }> }) {
-  const { fecha: fechaParam } = use(searchParams);
+export default function AgendaPage() {
+  // La página se genera estática: los parámetros de la URL se leen en el navegador.
+  return <Suspense fallback={<Cargando />}><AgendaPageContenido /></Suspense>;
+}
+
+function AgendaPageContenido() {
+  const busqueda = useSearchParams();
+  const fechaParam = busqueda.get("fecha") ?? undefined;
   const router = useRouter();
   const yo = useSesion();
   const esVet = yo.rol === "veterinario";

@@ -1,16 +1,22 @@
 "use client";
 
-import { use, useState } from "react";
+import { Suspense, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Aviso, Campo, claseBoton, claseInput } from "@/components/panel/ui";
 
 // Para el demo del portafolio se pueden mostrar las cuentas de prueba (datos ficticios).
 // Solo aparece si se define NEXT_PUBLIC_PANEL_DEMO_PASSWORD.
 const CLAVE_DEMO = process.env.NEXT_PUBLIC_PANEL_DEMO_PASSWORD;
 
-export default function LoginPage({ searchParams }: { searchParams: Promise<{ next?: string }> }) {
-  const { next } = use(searchParams);
+export default function LoginPage() {
+  // La página se genera estática: los parámetros de la URL se leen en el navegador.
+  return <Suspense fallback={null}><LoginPageContenido /></Suspense>;
+}
+
+function LoginPageContenido() {
+  const busqueda = useSearchParams();
+  const next = busqueda.get("next") ?? undefined;
   // Solo volvemos a rutas del propio panel (evita redirigir a sitios externos).
   const destino = next && next.startsWith("/panel") && !next.startsWith("//") ? next : "/panel";
 

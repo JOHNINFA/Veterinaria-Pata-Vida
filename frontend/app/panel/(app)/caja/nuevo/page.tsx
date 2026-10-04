@@ -2,18 +2,23 @@
 
 // Nueva cuenta de cobro. Se puede abrir desde la ficha del paciente o desde una consulta:
 //   /panel/caja/nuevo?paciente=1&consulta=3
-import { use, useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   EMOJI_ESPECIE, panelFetch, pesos, type Cobro, type ItemCobro, type Paciente, type Paginado, type Servicio,
 } from "@/lib/clinica";
 import { Aviso, Cargando, Campo, claseBoton, claseBotonSecundario, claseInput, Encabezado, Tarjeta } from "@/components/panel/ui";
 
-export default function NuevoCobroPage({ searchParams }: {
-  searchParams: Promise<{ paciente?: string; consulta?: string }>;
-}) {
-  const { paciente: pacienteParam, consulta } = use(searchParams);
+export default function NuevoCobroPage() {
+  // La página se genera estática: los parámetros de la URL se leen en el navegador.
+  return <Suspense fallback={<Cargando />}><NuevoCobroPageContenido /></Suspense>;
+}
+
+function NuevoCobroPageContenido() {
+  const busqueda = useSearchParams();
+  const pacienteParam = busqueda.get("paciente") ?? undefined;
+  const consulta = busqueda.get("consulta") ?? undefined;
   const router = useRouter();
   const [paciente, setPaciente] = useState<Paciente | null>(null);
   const [servicios, setServicios] = useState<Servicio[] | null>(null);

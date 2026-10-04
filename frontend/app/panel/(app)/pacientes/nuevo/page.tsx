@@ -1,12 +1,12 @@
 "use client";
 
-import { use, useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   ESPECIES, panelFetch, SEXOS, TIPOS_DOC, type Paciente, type Paginado, type SolicitudCita, type Tutor,
 } from "@/lib/clinica";
-import { Aviso, Campo, claseBoton, claseBotonSecundario, claseInput, Encabezado, Tarjeta } from "@/components/panel/ui";
+import { Aviso, Campo, Cargando, claseBoton, claseBotonSecundario, claseInput, Encabezado, Tarjeta } from "@/components/panel/ui";
 
 const tutorVacio = { nombres: "", apellidos: "", tipo_documento: "CC", numero_documento: "", telefono: "",
   email: "", direccion: "", autoriza_datos: false };
@@ -15,8 +15,14 @@ const pacienteVacio = { nombre: "", especie: "PERRO", raza: "", sexo: "M", fecha
 
 const digitos = (tel: string) => tel.replace(/\D/g, "").slice(-10);
 
-export default function NuevoPacientePage({ searchParams }: { searchParams: Promise<{ cita?: string }> }) {
-  const { cita: citaId } = use(searchParams);
+export default function NuevoPacientePage() {
+  // La página se genera estática: los parámetros de la URL se leen en el navegador.
+  return <Suspense fallback={<Cargando />}><NuevoPacientePageContenido /></Suspense>;
+}
+
+function NuevoPacientePageContenido() {
+  const busqueda = useSearchParams();
+  const citaId = busqueda.get("cita") ?? undefined;
   const router = useRouter();
   const [cita, setCita] = useState<SolicitudCita | null>(null);
   const [documento, setDocumento] = useState("");
