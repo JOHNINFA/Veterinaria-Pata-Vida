@@ -12,6 +12,7 @@ const MENU = [
   { href: "/panel", label: "Tablero", icono: "📊", roles: ["veterinario", "recepcion"] },
   { href: "/panel/pacientes", label: "Pacientes", icono: "🐾", roles: ["veterinario", "recepcion"] },
   { href: "/panel/citas", label: "Solicitudes de cita", icono: "📅", roles: ["veterinario", "recepcion"] },
+  { href: "/panel/caja", label: "Caja", icono: "💵", roles: ["veterinario", "recepcion"] },
 ];
 
 export default function PanelLayout({ children }: { children: React.ReactNode }) {

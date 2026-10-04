@@ -18,6 +18,21 @@ de portafolio con un stack profesional y desplegable.
 - ⚙️ **Panel de administración** de Django para gestionar productos y pedidos
 - 📱 **Responsive** — se ve bien en celular, tablet y escritorio
 
+### Panel clínico (`/panel`)
+
+Panel privado para el equipo de la veterinaria, con roles (veterinario / recepción):
+
+- 🩺 **Historia clínica** por paciente: consultas SOAP, signos vitales, vacunas y desparasitaciones
+- 💊 **Fórmula médica** imprimible, y envío al tutor por **WhatsApp** o **correo** (API de Brevo)
+- 💵 **Caja**: catálogo de servicios, cuentas de cobro, pago por método (efectivo, tarjeta,
+  transferencia, Nequi), anulación con motivo y cierre de caja del día
+- 📅 Solicitudes de cita desde la web y alertas de vacunas por vencer
+- 🔒 Reglas de la normativa colombiana: la historia es reservada al veterinario (Ley 576 de 2000),
+  consultas firmadas y cobros pagados no se modifican, nada se borra, consentimiento de datos (Ley 1581)
+- ✅ 31 pruebas automáticas: `python manage.py test clinica`
+
+> El recibo de caja no reemplaza la factura electrónica de la DIAN.
+
 ### Carrusel principal
 
 - Incluye tres banners para alimento, servicios veterinarios y accesorios.

@@ -3,8 +3,8 @@
 import { use, useEffect, useState } from "react";
 import Link from "next/link";
 import {
-  EMOJI_ESPECIE, ESPECIES, fechaCorta, fechaHora, panelFetch, SEXOS, TIPOS_CONSULTA, TIPOS_PREVENTIVO,
-  type Consulta, type HistoriaClinica, type Paciente, type Paginado, type Preventivo,
+  EMOJI_ESPECIE, ESPECIES, ESTADOS_COBRO, fechaCorta, fechaHora, panelFetch, pesos, SEXOS, TIPOS_CONSULTA,
+  TIPOS_PREVENTIVO, type Cobro, type Consulta, type HistoriaClinica, type Paciente, type Paginado, type Preventivo,
 } from "@/lib/clinica";
 import { useSesion } from "@/components/panel/SesionContext";
 import {
@@ -24,6 +24,7 @@ export default function FichaPacientePage({ params }: { params: Promise<{ id: st
   const [basico, setBasico] = useState<{ paciente: Paciente; preventivos: Preventivo[] } | null>(null);
   const [error, setError] = useState("");
   const [formVacuna, setFormVacuna] = useState(false);
+  const [cobros, setCobros] = useState<Cobro[]>([]);
 
   const [recarga, setRecarga] = useState(0); // subirlo vuelve a pedir la ficha
 
@@ -31,6 +32,9 @@ export default function FichaPacientePage({ params }: { params: Promise<{ id: st
     let vigente = true;
     (async () => {
       try {
+        panelFetch<Paginado<Cobro>>("clinica/cobros", { query: { paciente: id } })
+          .then((d) => vigente && setCobros(d.results))
+          .catch(() => {});
         if (esVet) {
           // El veterinario ve la historia clínica completa.
           const h = await panelFetch<HistoriaClinica>(`clinica/pacientes/${id}/historia`);
@@ -85,12 +89,13 @@ export default function FichaPacientePage({ params }: { params: Promise<{ id: st
             </p>
           </div>
         </div>
-        {esVet && !p.fallecido && (
-          <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2">
+          <Link href={`/panel/caja/nuevo?paciente=${p.id}`} className={claseBotonSecundario}>💵 Cobrar</Link>
+          {esVet && !p.fallecido && (<>
             <button onClick={() => setFormVacuna((v) => !v)} className={claseBotonSecundario}>💉 Vacuna / desparasitación</button>
             <Link href={`/panel/consultas/nueva?paciente=${p.id}`} className={claseBoton}>+ Nueva consulta</Link>
-          </div>
-        )}
+          </>)}
+        </div>
       </div>
 
       {p.alergias && (
@@ -123,6 +128,25 @@ export default function FichaPacientePage({ params }: { params: Promise<{ id: st
             {tutor.documento && <p className="text-sm text-black/55">{tutor.documento}</p>}
             <p className="text-sm text-black/55">📞 {tutor.telefono}</p>
             {tutor.email && <p className="text-sm text-black/55">✉️ {tutor.email}</p>}
+          </Tarjeta>
+          <Tarjeta titulo="Cuenta">
+            {cobros.length === 0 ? (
+              <p className="text-sm text-black/45">Sin cobros registrados.</p>
+            ) : (
+              <ul className="divide-y divide-black/5 text-sm">
+                {cobros.map((c) => (
+                  <li key={c.id}>
+                    <Link href={`/panel/caja/${c.id}`} className="flex items-center justify-between gap-2 py-2 hover:text-brand">
+                      <span><span className="font-mono text-xs">{c.numero}</span> · {fechaCorta(c.creado)}</span>
+                      <span className="flex items-center gap-2">
+                        <span className="font-semibold">{pesos(c.total)}</span>
+                        <Etiqueta color={ESTADOS_COBRO[c.estado].color}>{ESTADOS_COBRO[c.estado].texto}</Etiqueta>
+                      </span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
           </Tarjeta>
         </div>
 

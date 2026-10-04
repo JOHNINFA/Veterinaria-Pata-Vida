@@ -19,7 +19,8 @@ from django.db import transaction
 from django.utils import timezone
 
 from clinica.models import (
-    Consulta, Paciente, Prescripcion, Preventivo, SolicitudCita, Tutor, Veterinario,
+    Cobro, Consulta, ItemCobro, Paciente, Prescripcion, Preventivo, Servicio, SolicitudCita, Tutor,
+    Veterinario,
 )
 from clinica.permissions import GRUPO_RECEPCION, GRUPO_VETERINARIO
 
@@ -28,6 +29,14 @@ TUTORES = [
     ("Camila", "Rojas Díaz", "1000000001", "3000000001", "camila.demo@example.com", "Cra 43A #1-50, Medellín"),
     ("Andrés", "Mejía Toro", "1000000002", "3000000002", "andres.demo@example.com", "Cl 10 #38-20, Medellín"),
     ("Valentina", "Gómez Ruiz", "1000000003", "3000000003", "", "Cra 70 #44-10, Medellín"),
+]
+
+# Catálogo de precios de ejemplo (COP). Se ajusta en el admin.
+SERVICIOS = [
+    ("Consulta general", 55000), ("Consulta de urgencia", 90000), ("Control", 35000),
+    ("Vacuna múltiple canina", 65000), ("Vacuna triple felina", 60000), ("Vacuna antirrábica", 40000),
+    ("Desparasitación", 30000), ("Limpieza ótica", 45000), ("Fluidoterapia subcutánea", 50000),
+    ("Baño y peluquería", 60000),
 ]
 
 PACIENTES = [
@@ -172,9 +181,35 @@ class Command(BaseCommand):
                 motivo="Primera vacuna del cachorro.", acepta_datos=True,
             )
 
+        # --- Catálogo de servicios y cobros de ejemplo ---
+        servicios = {}
+        for nombre, precio in SERVICIOS:
+            servicios[nombre], _ = Servicio.objects.get_or_create(nombre=nombre, defaults={"precio": precio})
+
+        if not Cobro.objects.exists():
+            recep = User.objects.get(username="recepcion")
+            urgencia = rocky.consultas.order_by("fecha").first()
+            pagado = Cobro.objects.create(paciente=rocky, consulta=urgencia, creado_por=recep)
+            for nombre in ["Consulta de urgencia", "Fluidoterapia subcutánea"]:
+                s = servicios[nombre]
+                ItemCobro.objects.create(cobro=pagado, servicio=s, descripcion=s.nombre, precio_unitario=s.precio)
+            ItemCobro.objects.create(cobro=pagado, descripcion="Maropitant tabletas (caja x4)",
+                                     cantidad=1, precio_unitario=38000)
+            pagado.recalcular_total()
+            pagado.pagar("TRANSFERENCIA")
+
+            pendiente = Cobro.objects.create(
+                paciente=max_, consulta=max_.consultas.filter(cerrada=True).first(), creado_por=recep,
+            )
+            for nombre in ["Consulta general", "Limpieza ótica"]:
+                s = servicios[nombre]
+                ItemCobro.objects.create(cobro=pendiente, servicio=s, descripcion=s.nombre, precio_unitario=s.precio)
+            pendiente.recalcular_total()
+
         self.stdout.write(self.style.SUCCESS(
             f"Clínica lista 🩺  {Tutor.objects.count()} tutores · {Paciente.objects.count()} pacientes · "
-            f"{Consulta.objects.count()} consultas · {Preventivo.objects.count()} preventivos"
+            f"{Consulta.objects.count()} consultas · {Preventivo.objects.count()} preventivos · "
+            f"{Servicio.objects.count()} servicios · {Cobro.objects.count()} cobros"
         ))
 
     def _usuario(self, username, first, last, password, grupo, generada):

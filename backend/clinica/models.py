@@ -273,3 +273,99 @@ class SolicitudCita(models.Model):
 
     def __str__(self):
         return f"{self.nombre_mascota} ({self.nombre_tutor}) — {self.fecha_preferida}"
+
+
+# --------------------------------------------------------------------------- #
+# Caja: servicios y cobros
+# --------------------------------------------------------------------------- #
+class Servicio(models.Model):
+    """Catálogo de precios de la clínica (consulta, vacunas, baño...). Se administra en /admin."""
+    nombre = models.CharField(max_length=80, unique=True)
+    precio = models.DecimalField(max_digits=12, decimal_places=2)
+    activo = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["nombre"]
+
+    def __str__(self):
+        return f"{self.nombre} (${self.precio:,.0f})"
+
+
+class Cobro(models.Model):
+    """
+    Cuenta de cobro de una atención. El total lo calcula el servidor a partir de las líneas.
+    Un cobro pagado o anulado ya no se modifica (es un soporte contable).
+    No reemplaza la factura electrónica de la DIAN.
+    """
+    ESTADOS = [("PENDIENTE", "Pendiente"), ("PAGADO", "Pagado"), ("ANULADO", "Anulado")]
+    METODOS = [("EFECTIVO", "Efectivo"), ("TARJETA", "Tarjeta"),
+               ("TRANSFERENCIA", "Transferencia"), ("NEQUI", "Nequi / Daviplata")]
+
+    numero = models.CharField(max_length=20, unique=True, editable=False)
+    paciente = models.ForeignKey(Paciente, on_delete=models.PROTECT, related_name="cobros")
+    consulta = models.ForeignKey(
+        Consulta, on_delete=models.PROTECT, null=True, blank=True, related_name="cobros"
+    )
+    estado = models.CharField(max_length=10, choices=ESTADOS, default="PENDIENTE")
+    metodo_pago = models.CharField(max_length=15, choices=METODOS, blank=True)
+    total = models.DecimalField(max_digits=12, decimal_places=2, default=0, editable=False)
+    notas = models.CharField(max_length=200, blank=True)
+    motivo_anulacion = models.CharField(max_length=200, blank=True)
+    creado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="cobros_creados"
+    )
+    creado = models.DateTimeField(auto_now_add=True)
+    pagado_en = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-creado"]
+
+    def __str__(self):
+        return f"{self.numero} — {self.paciente.nombre}"
+
+    def save(self, *args, **kwargs):
+        if not self.numero:
+            # Mismo truco que el número de historia: RC-000001, RC-000002...
+            self.numero = f"TMP-{uuid.uuid4().hex[:12]}"
+            super().save(*args, **kwargs)
+            self.numero = f"RC-{self.pk:06d}"
+            return super().save(update_fields=["numero"])
+        super().save(*args, **kwargs)
+
+    def recalcular_total(self):
+        self.total = sum((i.subtotal for i in self.items.all()), 0)
+        super().save(update_fields=["total"])
+
+    def pagar(self, metodo):
+        if self.estado != "PENDIENTE":
+            raise ValidationError("Solo se puede pagar un cobro pendiente.")
+        if not self.items.exists():
+            raise ValidationError("El cobro no tiene líneas.")
+        self.estado, self.metodo_pago, self.pagado_en = "PAGADO", metodo, timezone.now()
+        super().save(update_fields=["estado", "metodo_pago", "pagado_en"])
+
+    def anular(self, motivo):
+        if self.estado == "ANULADO":
+            raise ValidationError("El cobro ya estaba anulado.")
+        if not motivo.strip():
+            raise ValidationError("Indica el motivo de la anulación.")
+        self.estado, self.motivo_anulacion = "ANULADO", motivo.strip()
+        super().save(update_fields=["estado", "motivo_anulacion"])
+
+
+class ItemCobro(models.Model):
+    cobro = models.ForeignKey(Cobro, on_delete=models.CASCADE, related_name="items")
+    servicio = models.ForeignKey(Servicio, on_delete=models.SET_NULL, null=True, blank=True)
+    descripcion = models.CharField(max_length=120)
+    cantidad = models.PositiveSmallIntegerField(default=1)
+    precio_unitario = models.DecimalField(max_digits=12, decimal_places=2)
+
+    class Meta:
+        verbose_name_plural = "Líneas de cobro"
+
+    def __str__(self):
+        return f"{self.cantidad} x {self.descripcion}"
+
+    @property
+    def subtotal(self):
+        return self.cantidad * self.precio_unitario

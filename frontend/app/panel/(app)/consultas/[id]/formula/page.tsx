@@ -5,7 +5,7 @@
 import { use, useEffect, useState } from "react";
 import Link from "next/link";
 import {
-  ESPECIES, fechaHora, panelFetch, SEXOS, VIAS, type Consulta, type HistoriaClinica,
+  ESPECIES, fechaHora, panelFetch, SEXOS, textoFormula, VIAS, whatsappA, type Consulta, type HistoriaClinica,
 } from "@/lib/clinica";
 import { Aviso, Cargando, claseBoton, claseBotonSecundario } from "@/components/panel/ui";
 import { LOCATION } from "@/lib/contact";
@@ -15,6 +15,7 @@ export default function FormulaPage({ params }: { params: Promise<{ id: string }
   const [consulta, setConsulta] = useState<Consulta | null>(null);
   const [historia, setHistoria] = useState<HistoriaClinica | null>(null);
   const [error, setError] = useState("");
+  const [envio, setEnvio] = useState<{ tipo: "ok" | "error" | "info"; texto: string } | null>(null);
 
   useEffect(() => {
     panelFetch<Consulta>(`clinica/consultas/${id}`)
@@ -30,12 +31,32 @@ export default function FormulaPage({ params }: { params: Promise<{ id: string }
   if (!consulta.cerrada) return <Aviso>La fórmula solo se imprime cuando la consulta está firmada.</Aviso>;
 
   const p = historia;
+
+  async function enviarCorreo() {
+    setEnvio({ tipo: "info", texto: "Enviando..." });
+    try {
+      const r = await panelFetch<{ enviado_a: string }>(`clinica/consultas/${id}/enviar-formula`, { method: "POST" });
+      setEnvio({ tipo: "ok", texto: `Fórmula enviada a ${r.enviado_a}.` });
+    } catch (e) {
+      setEnvio({ tipo: "error", texto: e instanceof Error ? e.message : "No se pudo enviar." });
+    }
+  }
+
   return (
     <>
-      <div className="mb-5 flex gap-3 print:hidden">
+      <div className="mb-5 flex flex-wrap gap-3 print:hidden">
         <button onClick={() => window.print()} className={claseBoton}>🖨️ Imprimir / Guardar PDF</button>
+        <a href={whatsappA(p.tutor.telefono, textoFormula(consulta, p))} target="_blank" rel="noopener noreferrer"
+          className={`${claseBotonSecundario} border-green-300 text-green-700 hover:bg-green-50`}>
+          💬 Enviar por WhatsApp
+        </a>
+        <button onClick={enviarCorreo} disabled={!p.tutor.email || envio?.tipo === "info"} className={claseBotonSecundario}
+          title={p.tutor.email ? `Se envía a ${p.tutor.email}` : "El tutor no tiene correo registrado"}>
+          ✉️ {p.tutor.email ? "Enviar por correo" : "Sin correo registrado"}
+        </button>
         <Link href={`/panel/consultas/${consulta.id}`} className={claseBotonSecundario}>Volver</Link>
       </div>
+      {envio && <div className="mb-5 print:hidden"><Aviso tipo={envio.tipo}>{envio.texto}</Aviso></div>}
 
       <article className="mx-auto max-w-3xl rounded-2xl bg-white p-8 shadow-sm print:max-w-none print:rounded-none print:p-0 print:shadow-none">
         <header className="flex items-start justify-between border-b-2 border-brand pb-4">

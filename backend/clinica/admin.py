@@ -1,6 +1,9 @@
 from django.contrib import admin
 
-from .models import Consulta, Paciente, Prescripcion, Preventivo, SolicitudCita, Tutor, Veterinario
+from .models import (
+    Cobro, Consulta, ItemCobro, Paciente, Prescripcion, Preventivo, Servicio, SolicitudCita, Tutor,
+    Veterinario,
+)
 
 
 @admin.register(Veterinario)
@@ -64,3 +67,34 @@ class SolicitudCitaAdmin(admin.ModelAdmin):
     list_display = ["nombre_mascota", "nombre_tutor", "telefono", "fecha_preferida", "estado"]
     list_filter = ["estado"]
     list_editable = ["estado"]
+
+
+@admin.register(Servicio)
+class ServicioAdmin(admin.ModelAdmin):
+    list_display = ["nombre", "precio", "activo"]
+    list_editable = ["precio", "activo"]
+
+
+class ItemCobroInline(admin.TabularInline):
+    model = ItemCobro
+    extra = 0
+    readonly_fields = ["servicio", "descripcion", "cantidad", "precio_unitario"]
+    can_delete = False
+
+
+@admin.register(Cobro)
+class CobroAdmin(admin.ModelAdmin):
+    """Solo consulta: los cobros se crean, pagan y anulan desde el panel (con sus reglas)."""
+    list_display = ["numero", "paciente", "total", "estado", "metodo_pago", "creado", "pagado_en"]
+    list_filter = ["estado", "metodo_pago"]
+    search_fields = ["numero", "paciente__nombre", "paciente__tutor__numero_documento"]
+    inlines = [ItemCobroInline]
+
+    def get_readonly_fields(self, request, obj=None):
+        return [f.name for f in Cobro._meta.fields]
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False

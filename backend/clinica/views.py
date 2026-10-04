@@ -16,12 +16,23 @@ Solo veterinario:
   POST /api/clinica/consultas/{id}/cerrar/   firma la consulta (queda en solo lectura)
   GET  /api/clinica/pacientes/{id}/historia/ historia clínica completa
   POST/PATCH /api/clinica/preventivos/   registrar vacunas y desparasitaciones
+  POST /api/clinica/consultas/{id}/enviar-formula/  envía la fórmula al correo del tutor
+
+Caja (veterinario o recepción):
+  GET  /api/clinica/servicios/           catálogo de precios
+  /api/clinica/cobros/                   cuentas de cobro (sin borrar)
+  POST /api/clinica/cobros/{id}/pagar/   {"metodo_pago": "EFECTIVO"}
+  POST /api/clinica/cobros/{id}/anular/  {"motivo": "..."}
+  GET  /api/clinica/cobros/caja/?fecha=YYYY-MM-DD   cierre de caja del día
 """
-from datetime import timedelta
+from datetime import date, timedelta
+from decimal import Decimal
 
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.utils import timezone
+from django.db.models import Sum
 from django.shortcuts import get_object_or_404
+from django.template.loader import render_to_string
 from rest_framework import filters, mixins, viewsets
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.exceptions import ValidationError
@@ -30,10 +41,13 @@ from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework_simplejwt.views import TokenObtainPairView
 
-from .models import Consulta, Paciente, Preventivo, SolicitudCita, Tutor, Veterinario
+from .correo import CorreoNoConfigurado, ErrorEnvioCorreo, enviar_correo
+from .models import (
+    Cobro, Consulta, Paciente, Preventivo, Servicio, SolicitudCita, Tutor, Veterinario,
+)
 from .permissions import EsPersonalClinica, EsVeterinario, es_recepcion, es_veterinario
 from .serializers import (
-    ConsultaSerializer, HistoriaClinicaSerializer, PacienteSerializer, PreventivoSerializer,
+    CobroSerializer, ConsultaSerializer, ServicioSerializer, HistoriaClinicaSerializer, PacienteSerializer, PreventivoSerializer,
     SolicitudCitaGestionSerializer, SolicitudCitaSerializer, TutorSerializer,
     VeterinarioPublicoSerializer,
 )
@@ -198,6 +212,43 @@ class ConsultaViewSet(viewsets.ModelViewSet):
             raise ValidationError(e.messages)
         return Response(self.get_serializer(consulta).data)
 
+    @action(detail=True, methods=["post"], url_path="enviar-formula",
+            throttle_classes=[ScopedRateThrottle])
+    def enviar_formula(self, request, pk=None):
+        """
+        Envía la fórmula firmada al correo REGISTRADO del tutor.
+        No acepta un correo libre: así la información reservada solo llega a su dueño.
+        """
+        consulta = self.get_object()
+        if not consulta.cerrada:
+            raise ValidationError("Firma la consulta antes de enviar la fórmula.")
+        tutor = consulta.paciente.tutor
+        if not tutor.email:
+            raise ValidationError("El tutor no tiene correo registrado. Agrégalo en su ficha.")
+
+        perfil = getattr(consulta.veterinario, "perfil_vet", None)
+        html = render_to_string("clinica/formula_email.html", {
+            "consulta": consulta,
+            "paciente": consulta.paciente,
+            "tutor": tutor,
+            "prescripciones": consulta.prescripciones.all(),
+            "veterinario": consulta.veterinario.get_full_name() or consulta.veterinario.username,
+            "matricula": perfil.matricula if perfil else "",
+        })
+        try:
+            enviar_correo(tutor.email, str(tutor),
+                          f"Fórmula médica de {consulta.paciente.nombre} · PataVida", html)
+        except CorreoNoConfigurado as e:
+            return Response({"detail": str(e)}, status=503)
+        except ErrorEnvioCorreo as e:
+            return Response({"detail": f"No se pudo enviar el correo: {e}"}, status=502)
+        return Response({"enviado_a": tutor.email})
+
+    def get_throttles(self):
+        if self.action == "enviar_formula":
+            self.throttle_scope = "correos"
+        return super().get_throttles()
+
 
 class PreventivoViewSet(viewsets.ModelViewSet):
     serializer_class = PreventivoSerializer
@@ -240,7 +291,92 @@ def resumen(request):
         "solicitudes_pendientes": SolicitudCita.objects.filter(estado="PENDIENTE").count(),
         "vencen_30_dias": len(dosis_vigentes(hoy + timedelta(days=30))),
     }
+    datos["cobrado_hoy"] = totales_caja(hoy)["total_pagado"]
+    datos["cobros_pendientes"] = Cobro.objects.filter(estado="PENDIENTE").count()
     if es_veterinario(request.user):
         datos["consultas_abiertas"] = Consulta.objects.filter(cerrada=False).count()
         datos["consultas_hoy"] = Consulta.objects.filter(fecha__date=hoy).count()
     return Response(datos)
+
+
+# --------------------------------------------------------------------------- #
+# Caja
+# --------------------------------------------------------------------------- #
+class ServicioViewSet(viewsets.ReadOnlyModelViewSet):
+    """Catálogo de precios. Se edita desde el admin de Django."""
+    permission_classes = [EsPersonalClinica]
+    serializer_class = ServicioSerializer
+    queryset = Servicio.objects.filter(activo=True)
+    pagination_class = None
+
+
+def totales_caja(dia):
+    """Lo cobrado en un día, total y por método de pago (solo cobros PAGADOS)."""
+    pagados = Cobro.objects.filter(estado="PAGADO", pagado_en__date=dia)
+    por_metodo = {m: Decimal("0") for m, _ in Cobro.METODOS}
+    for fila in pagados.values("metodo_pago").annotate(suma=Sum("total")):
+        por_metodo[fila["metodo_pago"]] = fila["suma"]
+    return {
+        "fecha": dia.isoformat(),
+        "total_pagado": pagados.aggregate(s=Sum("total"))["s"] or Decimal("0"),
+        "cantidad_pagados": pagados.count(),
+        "por_metodo": por_metodo,
+    }
+
+
+class CobroViewSet(viewsets.ModelViewSet):
+    permission_classes = [EsPersonalClinica]
+    serializer_class = CobroSerializer
+    # Sin DELETE: un cobro equivocado se ANULA con motivo, para que quede el rastro.
+    http_method_names = SIN_BORRAR
+
+    def get_queryset(self):
+        qs = Cobro.objects.select_related("paciente__tutor", "creado_por").prefetch_related("items")
+        params = self.request.query_params
+        if params.get("estado"):
+            qs = qs.filter(estado=params["estado"])
+        if params.get("paciente"):
+            qs = qs.filter(paciente_id=params["paciente"])
+        if params.get("consulta"):
+            qs = qs.filter(consulta_id=params["consulta"])
+        if params.get("fecha"):
+            try:
+                qs = qs.filter(creado__date=date.fromisoformat(params["fecha"]))
+            except ValueError:
+                raise ValidationError({"fecha": "Usa el formato AAAA-MM-DD."})
+        return qs
+
+    def perform_create(self, serializer):
+        serializer.save(creado_por=self.request.user)
+
+    def _accion(self, funcion, *args):
+        cobro = self.get_object()
+        try:
+            funcion(cobro, *args)
+        except DjangoValidationError as e:
+            raise ValidationError(e.messages)
+        return Response(self.get_serializer(cobro).data)
+
+    @action(detail=True, methods=["post"])
+    def pagar(self, request, pk=None):
+        metodo = request.data.get("metodo_pago", "")
+        if metodo not in dict(Cobro.METODOS):
+            raise ValidationError({"metodo_pago": "Elige un método de pago válido."})
+        return self._accion(Cobro.pagar, metodo)
+
+    @action(detail=True, methods=["post"])
+    def anular(self, request, pk=None):
+        return self._accion(Cobro.anular, str(request.data.get("motivo", "")))
+
+    @action(detail=False, methods=["get"])
+    def caja(self, request):
+        """Cierre de caja: lo cobrado en el día y lo que sigue pendiente."""
+        try:
+            dia = date.fromisoformat(request.query_params.get("fecha", ""))
+        except ValueError:
+            dia = timezone.localdate()
+        datos = totales_caja(dia)
+        pendientes = Cobro.objects.filter(estado="PENDIENTE")
+        datos["pendientes_cantidad"] = pendientes.count()
+        datos["pendientes_total"] = pendientes.aggregate(s=Sum("total"))["s"] or Decimal("0")
+        return Response(datos)

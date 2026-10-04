@@ -151,6 +151,7 @@ REST_FRAMEWORK = {
     "DEFAULT_THROTTLE_RATES": {
         "login": "10/minute",
         "solicitudes": "5/hour",
+        "correos": "20/day",
     },
 }
 

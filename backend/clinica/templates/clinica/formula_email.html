@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="es">
+<body style="margin:0;background:#f3f5f4;font-family:Arial,Helvetica,sans-serif;color:#1f2937">
+  <table width="100%" cellpadding="0" cellspacing="0" style="padding:24px 12px">
+    <tr><td align="center">
+      <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;background:#ffffff;border-radius:16px;overflow:hidden">
+        <tr><td style="background:#0d9488;color:#ffffff;padding:20px 28px">
+          <p style="margin:0;font-size:20px;font-weight:bold">🐾 PataVida · Clínica Veterinaria</p>
+          <p style="margin:4px 0 0;font-size:13px;opacity:.85">Fórmula médica veterinaria · Historia {{ paciente.numero_historia }}</p>
+        </td></tr>
+        <tr><td style="padding:24px 28px;font-size:14px;line-height:1.5">
+          <p style="margin:0 0 12px">Hola {{ tutor.nombres }},</p>
+          <p style="margin:0 0 16px">Te compartimos la fórmula de <strong>{{ paciente.nombre }}</strong> de la consulta del {{ consulta.fecha|date:"d \d\e F \d\e Y" }}.</p>
+
+          {% if paciente.alergias %}
+          <p style="margin:0 0 16px;padding:10px 12px;border:1px solid #fca5a5;border-radius:8px;color:#b91c1c;font-weight:bold">⚠ Alergias: {{ paciente.alergias }}</p>
+          {% endif %}
+
+          <p style="margin:0 0 4px;font-size:12px;font-weight:bold;color:#6b7280;text-transform:uppercase">Diagnóstico</p>
+          <p style="margin:0 0 18px">{{ consulta.diagnostico }}</p>
+
+          <p style="margin:0 0 8px;font-size:18px;font-weight:bold">℞</p>
+          {% for m in prescripciones %}
+          <div style="margin:0 0 12px;padding:12px;background:#f9fafb;border-radius:10px">
+            <p style="margin:0;font-weight:bold">{{ forloop.counter }}. {{ m.medicamento }}{% if m.principio_activo %} ({{ m.principio_activo }}){% endif %}</p>
+            <p style="margin:4px 0 0">Vía {{ m.get_via_display|lower }} · {{ m.dosis }} · {{ m.frecuencia }} · durante {{ m.duracion_dias }} día{{ m.duracion_dias|pluralize }}</p>
+            {% if m.indicaciones %}<p style="margin:4px 0 0;color:#6b7280">Indicaciones: {{ m.indicaciones }}</p>{% endif %}
+          </div>
+          {% empty %}
+          <p style="margin:0 0 12px;color:#6b7280">Sin medicamentos formulados.</p>
+          {% endfor %}
+
+          {% if consulta.plan %}
+          <p style="margin:16px 0 4px;font-size:12px;font-weight:bold;color:#6b7280;text-transform:uppercase">Recomendaciones</p>
+          <p style="margin:0;white-space:pre-line">{{ consulta.plan }}</p>
+          {% endif %}
+
+          <p style="margin:24px 0 0;padding-top:12px;border-top:1px solid #e5e7eb">
+            <strong>{{ veterinario }}</strong><br>
+            <span style="color:#6b7280">Médico veterinario · Mat. {{ matricula|default:"—" }}</span>
+          </p>
+        </td></tr>
+        <tr><td style="padding:14px 28px;background:#f9fafb;font-size:11px;color:#9ca3af">
+          Documento firmado electrónicamente el {{ consulta.cerrada_en|date:"d/m/Y H:i" }}.
+          Información reservada (Ley 576 de 2000): está dirigida solo al tutor del paciente.
+          Demo de portafolio · datos ficticios.
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>

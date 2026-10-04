@@ -17,6 +17,8 @@ export interface Resumen {
   tutores: number;
   solicitudes_pendientes: number;
   vencen_30_dias: number;
+  cobrado_hoy: number;
+  cobros_pendientes: number;
   consultas_abiertas?: number;
   consultas_hoy?: number;
 }
@@ -127,6 +129,53 @@ export interface HistoriaClinica extends Omit<Paciente, "tutor" | "tutor_nombre"
   preventivos: Preventivo[];
 }
 
+export interface Servicio {
+  id: number;
+  nombre: string;
+  precio: string;
+}
+
+export interface ItemCobro {
+  id?: number;
+  servicio: number | null;
+  descripcion: string;
+  cantidad: number;
+  precio_unitario: string;
+  subtotal?: string;
+}
+
+export type EstadoCobro = "PENDIENTE" | "PAGADO" | "ANULADO";
+
+export interface Cobro {
+  id: number;
+  numero: string;
+  paciente: number;
+  paciente_nombre: string;
+  numero_historia: string;
+  tutor_nombre: string;
+  tutor_documento: string;
+  tutor_telefono: string;
+  consulta: number | null;
+  estado: EstadoCobro;
+  metodo_pago: string;
+  items: ItemCobro[];
+  total: string;
+  notas: string;
+  motivo_anulacion: string;
+  creado_por_nombre: string;
+  creado: string;
+  pagado_en: string | null;
+}
+
+export interface CierreCaja {
+  fecha: string;
+  total_pagado: number;
+  cantidad_pagados: number;
+  por_metodo: Record<string, number>;
+  pendientes_cantidad: number;
+  pendientes_total: number;
+}
+
 export interface Paginado<T> {
   count: number;
   results: T[];
@@ -154,6 +203,14 @@ export const VIAS: Record<string, string> = {
 };
 export const TIPOS_PREVENTIVO: Record<string, string> = {
   VACUNA: "Vacuna", DESPARASITACION_INT: "Desparasitación interna", DESPARASITACION_EXT: "Desparasitación externa",
+};
+export const METODOS_PAGO: Record<string, string> = {
+  EFECTIVO: "Efectivo", TARJETA: "Tarjeta", TRANSFERENCIA: "Transferencia", NEQUI: "Nequi / Daviplata",
+};
+export const ESTADOS_COBRO: Record<EstadoCobro, { texto: string; color: "ambar" | "verde" | "rojo" }> = {
+  PENDIENTE: { texto: "Pendiente", color: "ambar" },
+  PAGADO: { texto: "Pagado", color: "verde" },
+  ANULADO: { texto: "Anulado", color: "rojo" },
 };
 export const TIPOS_DOC: Record<string, string> = {
   CC: "Cédula de ciudadanía", CE: "Cédula de extranjería", PAS: "Pasaporte", NIT: "NIT",
@@ -232,4 +289,30 @@ export function whatsappA(telefono: string, mensaje: string): string {
   let n = telefono.replace(/\D/g, "");
   if (n.length === 10 && n.startsWith("3")) n = `57${n}`;
   return `https://wa.me/${n}?text=${encodeURIComponent(mensaje)}`;
+}
+
+/** 95000 -> "$95.000" (el mismo formato de la tienda). */
+export { formatPrecio as pesos } from "@/lib/api";
+
+/** Fórmula en texto plano para mandarla por WhatsApp. */
+export function textoFormula(c: Consulta, h: HistoriaClinica): string {
+  const lineas = c.prescripciones.map((m, i) =>
+    `${i + 1}. *${m.medicamento}*${m.principio_activo ? ` (${m.principio_activo})` : ""}\n` +
+    `   Vía ${VIAS[m.via].toLowerCase()} · ${m.dosis} · ${m.frecuencia} · ${m.duracion_dias} ${m.duracion_dias === 1 ? "día" : "días"}` +
+    (m.indicaciones ? `\n   _${m.indicaciones}_` : ""),
+  );
+  return [
+    `Hola ${h.tutor.nombres} 👋, te compartimos la fórmula de *${h.nombre}* 🐾`,
+    "",
+    `*PataVida · Fórmula médica veterinaria*`,
+    `Historia ${h.numero_historia} · ${fechaCorta(c.fecha)}`,
+    h.alergias ? `⚠️ Alergias: ${h.alergias}` : null,
+    `Diagnóstico: ${c.diagnostico}`,
+    "",
+    "℞",
+    ...(lineas.length ? lineas : ["Sin medicamentos formulados."]),
+    c.plan ? `\n*Recomendaciones:* ${c.plan}` : null,
+    "",
+    `${c.veterinario_nombre} · Médico veterinario · Mat. ${c.veterinario_matricula || "—"}`,
+  ].filter((l) => l !== null).join("\n");
 }

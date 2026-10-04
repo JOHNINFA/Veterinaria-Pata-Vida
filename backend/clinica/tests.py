@@ -3,13 +3,14 @@ Pruebas de las reglas de negocio y seguridad del módulo clínico.
 Uso:  python manage.py test clinica
 """
 from datetime import timedelta
+from unittest.mock import patch
 
 from django.contrib.auth.models import Group, User
 from django.core.cache import cache
 from django.utils import timezone
 from rest_framework.test import APITestCase
 
-from .models import Consulta, Paciente, Preventivo, Tutor, Veterinario
+from .models import Cobro, Consulta, Paciente, Preventivo, Servicio, Tutor, Veterinario
 from .permissions import GRUPO_RECEPCION, GRUPO_VETERINARIO
 
 API = "/api/clinica"
@@ -178,3 +179,118 @@ class AutenticacionTests(BaseClinica):
     def test_login_con_clave_incorrecta(self):
         r = self.client.post("/api/auth/login/", {"username": "vet", "password": "mala"})
         self.assertEqual(r.status_code, 401)
+
+
+class EnvioFormulaTests(BaseClinica):
+    def setUp(self):
+        super().setUp()
+        self.como(self.vet)
+        self.tutor.email = "ana@example.com"
+        self.tutor.save()
+        r = self.client.post(f"{API}/consultas/", {
+            "paciente": self.paciente.id, "motivo": "Control", "diagnostico": "Otitis",
+            "prescripciones": [{"medicamento": "Gotas", "via": "OTICA", "dosis": "4 gotas",
+                                "frecuencia": "cada 12 horas", "duracion_dias": 10}],
+        }, format="json")
+        self.cid = r.data["id"]
+        self.url = f"{API}/consultas/{self.cid}/enviar-formula/"
+
+    def test_no_se_envia_sin_firmar(self):
+        self.assertEqual(self.client.post(self.url).status_code, 400)
+
+    @patch("clinica.views.enviar_correo")
+    def test_envia_al_correo_registrado_del_tutor(self, enviar):
+        self.client.post(f"{API}/consultas/{self.cid}/cerrar/")
+        # Aunque manden otro correo, solo se usa el registrado del tutor.
+        r = self.client.post(self.url, {"email": "otro@example.com"}, format="json")
+        self.assertEqual(r.status_code, 200)
+        destino, _, asunto, html = enviar.call_args.args
+        self.assertEqual(destino, "ana@example.com")
+        self.assertIn("Max", asunto)
+        self.assertIn("Gotas", html)
+        self.assertIn("MVZ-TEST-1", html)
+
+    def test_sin_configurar_responde_503(self):
+        self.client.post(f"{API}/consultas/{self.cid}/cerrar/")
+        with patch.dict("os.environ", {"BREVO_API_KEY": "", "CORREO_REMITENTE": ""}):
+            self.assertEqual(self.client.post(self.url).status_code, 503)
+
+    def test_recepcion_no_envia_formulas(self):
+        self.client.post(f"{API}/consultas/{self.cid}/cerrar/")
+        self.como(self.recep)
+        self.assertEqual(self.client.post(self.url).status_code, 403)
+
+
+class CajaTests(BaseClinica):
+    def setUp(self):
+        super().setUp()
+        self.como(self.recep)
+        self.consulta = Servicio.objects.create(nombre="Consulta general", precio=55000)
+
+    def crear_cobro(self, **extra):
+        datos = {"paciente": self.paciente.id, "items": [
+            {"servicio": self.consulta.id},
+            {"descripcion": "Gotas óticas", "cantidad": 2, "precio_unitario": "20000"},
+        ]}
+        datos.update(extra)
+        return self.client.post(f"{API}/cobros/", datos, format="json")
+
+    def test_el_total_lo_calcula_el_servidor(self):
+        r = self.crear_cobro(total="1")  # un total enviado por el navegador se ignora
+        self.assertEqual(r.status_code, 201)
+        self.assertEqual(r.data["total"], "95000.00")
+        self.assertEqual(r.data["items"][0]["descripcion"], "Consulta general")
+        self.assertEqual(r.data["numero"], f"RC-{r.data['id']:06d}")
+        self.assertEqual(r.data["estado"], "PENDIENTE")
+
+    def test_cobro_sin_lineas_es_rechazado(self):
+        self.assertEqual(self.crear_cobro(items=[]).status_code, 400)
+
+    def test_pagado_no_se_modifica_ni_se_borra(self):
+        cid = self.crear_cobro().data["id"]
+        r = self.client.post(f"{API}/cobros/{cid}/pagar/", {"metodo_pago": "NEQUI"}, format="json")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.data["estado"], "PAGADO")
+        editar = self.client.patch(f"{API}/cobros/{cid}/", {"items": [{"descripcion": "x", "precio_unitario": "1"}]},
+                                   format="json")
+        self.assertEqual(editar.status_code, 400)
+        self.assertEqual(Cobro.objects.get(pk=cid).total, 95000)
+        self.assertEqual(self.client.delete(f"{API}/cobros/{cid}/").status_code, 405)
+        # Tampoco se cobra dos veces.
+        otra = self.client.post(f"{API}/cobros/{cid}/pagar/", {"metodo_pago": "EFECTIVO"}, format="json")
+        self.assertEqual(otra.status_code, 400)
+
+    def test_metodo_de_pago_invalido(self):
+        cid = self.crear_cobro().data["id"]
+        r = self.client.post(f"{API}/cobros/{cid}/pagar/", {"metodo_pago": "BITCOIN"}, format="json")
+        self.assertEqual(r.status_code, 400)
+
+    def test_anular_exige_motivo(self):
+        cid = self.crear_cobro().data["id"]
+        self.assertEqual(self.client.post(f"{API}/cobros/{cid}/anular/", {}, format="json").status_code, 400)
+        r = self.client.post(f"{API}/cobros/{cid}/anular/", {"motivo": "Error de digitación"}, format="json")
+        self.assertEqual(r.data["estado"], "ANULADO")
+
+    def test_cierre_de_caja_suma_solo_lo_pagado(self):
+        pagado = self.crear_cobro().data["id"]
+        self.client.post(f"{API}/cobros/{pagado}/pagar/", {"metodo_pago": "EFECTIVO"}, format="json")
+        anulado = self.crear_cobro().data["id"]
+        self.client.post(f"{API}/cobros/{anulado}/pagar/", {"metodo_pago": "TARJETA"}, format="json")
+        self.client.post(f"{API}/cobros/{anulado}/anular/", {"motivo": "Devolución"}, format="json")
+        self.crear_cobro()  # pendiente
+        r = self.client.get(f"{API}/cobros/caja/")
+        self.assertEqual(r.data["total_pagado"], 95000)
+        self.assertEqual(r.data["por_metodo"]["EFECTIVO"], 95000)
+        self.assertEqual(r.data["por_metodo"]["TARJETA"], 0)
+        self.assertEqual(r.data["pendientes_cantidad"], 1)
+
+    def test_consulta_de_otro_paciente_es_rechazada(self):
+        otro = Paciente.objects.create(tutor=self.tutor, nombre="Luna", especie="GATO", sexo="H")
+        c = Consulta.objects.create(paciente=otro, veterinario=self.vet, motivo="x")
+        self.assertEqual(self.crear_cobro(consulta=c.id).status_code, 400)
+
+    def test_anonimo_y_sin_rol_no_ven_la_caja(self):
+        self.client.force_authenticate(user=None)
+        self.assertEqual(self.client.get(f"{API}/cobros/").status_code, 401)
+        self.como(self.otro)
+        self.assertEqual(self.client.get(f"{API}/cobros/").status_code, 403)

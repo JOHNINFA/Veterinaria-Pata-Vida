@@ -1,11 +1,13 @@
 from datetime import date
+from decimal import Decimal
 
 from django.db import transaction
 from django.utils import timezone
 from rest_framework import serializers
 
 from .models import (
-    Consulta, Paciente, Prescripcion, Preventivo, SolicitudCita, Tutor, Veterinario,
+    Cobro, Consulta, ItemCobro, Paciente, Prescripcion, Preventivo, Servicio, SolicitudCita, Tutor,
+    Veterinario,
 )
 
 
@@ -207,3 +209,101 @@ class HistoriaClinicaSerializer(serializers.ModelSerializer):
 
     def get_edad(self, obj) -> str:
         return PacienteSerializer().get_edad(obj)
+
+
+# --------------------------------------------------------------------------- #
+# Caja (veterinario + recepción)
+# --------------------------------------------------------------------------- #
+class ServicioSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Servicio
+        fields = ["id", "nombre", "precio"]
+
+
+class ItemCobroSerializer(serializers.ModelSerializer):
+    precio_unitario = serializers.DecimalField(max_digits=12, decimal_places=2, required=False, min_value=Decimal("0"))
+    descripcion = serializers.CharField(max_length=120, required=False, allow_blank=True)
+    cantidad = serializers.IntegerField(min_value=1, max_value=999, default=1)
+    subtotal = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
+
+    class Meta:
+        model = ItemCobro
+        fields = ["id", "servicio", "descripcion", "cantidad", "precio_unitario", "subtotal"]
+
+    def validate(self, attrs):
+        servicio = attrs.get("servicio")
+        # Si viene del catálogo, el precio y el nombre salen del catálogo salvo que se ajusten.
+        if servicio:
+            attrs.setdefault("precio_unitario", servicio.precio)
+            if not attrs.get("descripcion"):
+                attrs["descripcion"] = servicio.nombre
+        if not attrs.get("descripcion"):
+            raise serializers.ValidationError({"descripcion": "Escribe qué se está cobrando."})
+        if attrs.get("precio_unitario") is None:
+            raise serializers.ValidationError({"precio_unitario": "Indica el precio."})
+        return attrs
+
+
+class CobroSerializer(serializers.ModelSerializer):
+    """
+    Cuenta de cobro con sus líneas. El total SIEMPRE lo calcula el servidor;
+    el estado solo cambia con las acciones pagar / anular.
+    """
+    items = ItemCobroSerializer(many=True)
+    paciente_nombre = serializers.CharField(source="paciente.nombre", read_only=True)
+    numero_historia = serializers.CharField(source="paciente.numero_historia", read_only=True)
+    tutor_nombre = serializers.CharField(source="paciente.tutor.__str__", read_only=True)
+    tutor_documento = serializers.SerializerMethodField()
+    tutor_telefono = serializers.CharField(source="paciente.tutor.telefono", read_only=True)
+    creado_por_nombre = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Cobro
+        fields = ["id", "numero", "paciente", "paciente_nombre", "numero_historia", "tutor_nombre",
+                  "tutor_documento", "tutor_telefono", "consulta", "estado", "metodo_pago", "items",
+                  "total", "notas", "motivo_anulacion", "creado_por_nombre", "creado", "pagado_en"]
+        read_only_fields = ["numero", "estado", "metodo_pago", "total", "motivo_anulacion", "creado",
+                            "pagado_en"]
+
+    def get_tutor_documento(self, obj) -> str:
+        t = obj.paciente.tutor
+        return f"{t.tipo_documento} {t.numero_documento}"
+
+    def get_creado_por_nombre(self, obj) -> str:
+        return obj.creado_por.get_full_name() or obj.creado_por.username
+
+    def validate_items(self, items):
+        if not items:
+            raise serializers.ValidationError("Agrega al menos una línea.")
+        return items
+
+    def validate(self, attrs):
+        if self.instance and self.instance.estado != "PENDIENTE":
+            raise serializers.ValidationError("Un cobro pagado o anulado no se puede modificar.")
+        paciente = attrs.get("paciente", getattr(self.instance, "paciente", None))
+        consulta = attrs.get("consulta")
+        if consulta and consulta.paciente_id != paciente.id:
+            raise serializers.ValidationError({"consulta": "La consulta no es de este paciente."})
+        if self.instance and "paciente" in attrs and attrs["paciente"] != self.instance.paciente:
+            raise serializers.ValidationError({"paciente": "No se puede cambiar el paciente de un cobro."})
+        return attrs
+
+    @transaction.atomic
+    def create(self, validated_data):
+        items = validated_data.pop("items")
+        cobro = Cobro.objects.create(**validated_data)
+        for item in items:
+            ItemCobro.objects.create(cobro=cobro, **item)
+        cobro.recalcular_total()
+        return cobro
+
+    @transaction.atomic
+    def update(self, instance, validated_data):
+        items = validated_data.pop("items", None)
+        instance = super().update(instance, validated_data)
+        if items is not None:
+            instance.items.all().delete()
+            for item in items:
+                ItemCobro.objects.create(cobro=instance, **item)
+        instance.recalcular_total()
+        return instance

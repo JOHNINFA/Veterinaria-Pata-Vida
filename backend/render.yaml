@@ -30,3 +30,10 @@ services:
         sync: false
       - key: CLINICA_DEMO_PASSWORD
         sync: false
+      # Envío de fórmulas por correo (API de Brevo; Render gratis bloquea SMTP)
+      - key: BREVO_API_KEY
+        sync: false
+      - key: CORREO_REMITENTE
+        sync: false
+      - key: CORREO_REMITENTE_NOMBRE
+        value: PataVida Clínica Veterinaria

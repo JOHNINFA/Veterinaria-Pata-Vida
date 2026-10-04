@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
-  fechaCorta, panelFetch, TIPOS_PREVENTIVO, whatsappA,
+  fechaCorta, panelFetch, pesos, TIPOS_PREVENTIVO, whatsappA,
   type Paginado, type Preventivo, type Resumen, type SolicitudCita,
 } from "@/lib/clinica";
 import { useSesion } from "@/components/panel/SesionContext";
@@ -47,7 +47,7 @@ export default function TableroPage() {
     { valor: resumen.vencen_30_dias, texto: "Vacunas por vencer (30 días)", icono: "💉", href: "#vencimientos" },
     ...(yo.rol === "veterinario"
       ? [{ valor: resumen.consultas_abiertas ?? 0, texto: "Consultas sin firmar", icono: "📝", href: "/panel/pacientes" }]
-      : [{ valor: resumen.tutores, texto: "Tutores registrados", icono: "👤", href: "/panel/pacientes" }]),
+      : [{ valor: pesos(resumen.cobrado_hoy), texto: `Cobrado hoy · ${resumen.cobros_pendientes} por cobrar`, icono: "💵", href: "/panel/caja" }]),
   ];
 
   return (

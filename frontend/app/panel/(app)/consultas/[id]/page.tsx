@@ -50,7 +50,12 @@ export default function ConsultaPage({ params }: { params: Promise<{ id: string 
           </p>
         </div>
         {consulta.cerrada ? (
-          <Link href={`/panel/consultas/${consulta.id}/formula`} className={claseBoton}>🖨️ Imprimir fórmula</Link>
+          <div className="flex flex-wrap gap-2">
+            <Link href={`/panel/caja/nuevo?paciente=${consulta.paciente}&consulta=${consulta.id}`} className={claseBotonSecundario}>
+              💵 Generar cobro
+            </Link>
+            <Link href={`/panel/consultas/${consulta.id}/formula`} className={claseBoton}>🖨️ Fórmula: imprimir o enviar</Link>
+          </div>
         ) : (
           <button onClick={firmar} disabled={firmando} className={claseBoton}>
             {firmando ? "Firmando..." : "✍️ Cerrar y firmar"}
