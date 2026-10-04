@@ -64,7 +64,8 @@ class PreventivoAdmin(admin.ModelAdmin):
 
 @admin.register(SolicitudCita)
 class SolicitudCitaAdmin(admin.ModelAdmin):
-    list_display = ["nombre_mascota", "nombre_tutor", "telefono", "fecha_preferida", "estado"]
+    list_display = ["nombre_mascota", "nombre_tutor", "telefono", "fecha_preferida", "estado", "paciente"]
+    raw_id_fields = ["paciente", "consulta"]
     list_filter = ["estado"]
     list_editable = ["estado"]
 

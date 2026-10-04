@@ -8,8 +8,10 @@ import ConsultaForm from "@/components/panel/ConsultaForm";
 import { useSesion } from "@/components/panel/SesionContext";
 import { Aviso, Cargando, Encabezado } from "@/components/panel/ui";
 
-export default function NuevaConsultaPage({ searchParams }: { searchParams: Promise<{ paciente?: string }> }) {
-  const { paciente: pacienteId } = use(searchParams);
+export default function NuevaConsultaPage({ searchParams }: {
+  searchParams: Promise<{ paciente?: string; cita?: string }>;
+}) {
+  const { paciente: pacienteId, cita } = use(searchParams);
   const yo = useSesion();
   const router = useRouter();
   const [paciente, setPaciente] = useState<Paciente | null>(null);
@@ -37,7 +39,7 @@ export default function NuevaConsultaPage({ searchParams }: { searchParams: Prom
           ⚠️ ALERGIAS: {paciente.alergias}
         </div>
       )}
-      <ConsultaForm pacienteId={paciente.id} alGuardar={(c) => router.replace(`/panel/consultas/${c.id}`)} />
+      <ConsultaForm pacienteId={paciente.id} citaId={cita ? Number(cita) : undefined} alGuardar={(c) => router.replace(`/panel/consultas/${c.id}`)} />
     </>
   );
 }

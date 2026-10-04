@@ -42,10 +42,51 @@ class SolicitudCitaSerializer(serializers.ModelSerializer):
         return valor
 
 
+def solo_digitos(telefono: str) -> str:
+    """Últimos 10 dígitos: "+57 315 963 2585" y "3159632585" son el mismo celular."""
+    return "".join(c for c in telefono if c.isdigit())[-10:]
+
+
 class SolicitudCitaGestionSerializer(SolicitudCitaSerializer):
-    """Versión para recepción: puede cambiar el estado."""
+    """
+    Versión para el personal: cambia el estado y vincula la cita con el paciente registrado.
+    También dice en qué paso va la atención (paciente -> consulta -> cobro) para la agenda.
+    No expone datos clínicos: solo si la consulta existe y si está firmada.
+    """
+    paciente_nombre = serializers.CharField(source="paciente.nombre", read_only=True, default="")
+    numero_historia = serializers.CharField(source="paciente.numero_historia", read_only=True, default="")
+    consulta_cerrada = serializers.BooleanField(source="consulta.cerrada", read_only=True, default=None)
+    cobro = serializers.SerializerMethodField()
+    paciente_sugerido = serializers.SerializerMethodField()
+
     class Meta(SolicitudCitaSerializer.Meta):
-        read_only_fields = ["creado"]
+        fields = SolicitudCitaSerializer.Meta.fields + [
+            "paciente", "paciente_nombre", "numero_historia", "consulta", "consulta_cerrada", "cobro",
+            "paciente_sugerido",
+        ]
+        read_only_fields = ["creado", "consulta"]
+
+    def get_cobro(self, obj):
+        if not obj.consulta_id:
+            return None
+        cobro = obj.consulta.cobros.exclude(estado="ANULADO").order_by("-creado").first()
+        return {"id": cobro.id, "estado": cobro.estado, "total": str(cobro.total)} if cobro else None
+
+    def get_paciente_sugerido(self, obj):
+        """Si la mascota ya es paciente (mismo nombre y mismo celular del tutor), la sugiere."""
+        if obj.paciente_id:
+            return None
+        celular = solo_digitos(obj.telefono)
+        for p in Paciente.objects.filter(nombre__iexact=obj.nombre_mascota.strip(), fallecido=False).select_related("tutor"):
+            if celular and solo_digitos(p.tutor.telefono) == celular:
+                return {"id": p.id, "nombre": p.nombre, "numero_historia": p.numero_historia}
+        return None
+
+    def validate(self, attrs):
+        if "paciente" in attrs and self.instance and self.instance.consulta_id \
+                and attrs["paciente"] != self.instance.paciente:
+            raise serializers.ValidationError({"paciente": "La cita ya fue atendida; no se puede cambiar el paciente."})
+        return attrs
 
 
 # --------------------------------------------------------------------------- #
@@ -114,6 +155,10 @@ class ConsultaSerializer(serializers.ModelSerializer):
     El veterinario lo pone el servidor (usuario autenticado), nunca el navegador.
     """
     prescripciones = PrescripcionSerializer(many=True, required=False)
+    # Opcional: la cita de la agenda que se está atendiendo.
+    cita = serializers.PrimaryKeyRelatedField(
+        queryset=SolicitudCita.objects.all(), write_only=True, required=False, allow_null=True
+    )
     paciente_nombre = serializers.CharField(source="paciente.nombre", read_only=True)
     veterinario_nombre = serializers.SerializerMethodField()
     veterinario_matricula = serializers.SerializerMethodField()
@@ -124,7 +169,7 @@ class ConsultaSerializer(serializers.ModelSerializer):
                   "veterinario_matricula", "fecha", "tipo", "motivo", "anamnesis", "peso_kg",
                   "temperatura_c", "frecuencia_cardiaca", "frecuencia_respiratoria", "mucosas",
                   "tllc_segundos", "hidratacion_pct", "condicion_corporal", "examen_fisico",
-                  "diagnostico", "plan", "pronostico", "prescripciones", "cerrada", "cerrada_en"]
+                  "diagnostico", "plan", "pronostico", "prescripciones", "cerrada", "cerrada_en", "cita"]
         read_only_fields = ["veterinario", "cerrada", "cerrada_en"]
 
     def get_veterinario_nombre(self, obj) -> str:
@@ -139,6 +184,12 @@ class ConsultaSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("La consulta está cerrada y firmada; no se puede modificar.")
         if self.instance and "paciente" in attrs and attrs["paciente"] != self.instance.paciente:
             raise serializers.ValidationError({"paciente": "No se puede cambiar el paciente de una consulta."})
+        cita = attrs.get("cita")
+        if cita and not self.instance:
+            if cita.paciente_id != attrs["paciente"].id:
+                raise serializers.ValidationError({"cita": "La cita no está vinculada a este paciente."})
+            if cita.consulta_id:
+                raise serializers.ValidationError({"cita": "Esa cita ya tiene una consulta."})
         return attrs
 
     def validate_condicion_corporal(self, valor):
@@ -149,14 +200,19 @@ class ConsultaSerializer(serializers.ModelSerializer):
     @transaction.atomic  # o se guarda la consulta con toda su fórmula, o nada
     def create(self, validated_data):
         lineas = validated_data.pop("prescripciones", [])
+        cita = validated_data.pop("cita", None)
         consulta = Consulta.objects.create(**validated_data)
         for linea in lineas:
             Prescripcion.objects.create(consulta=consulta, **linea)
+        if cita:
+            cita.consulta = consulta
+            cita.save(update_fields=["consulta"])
         return consulta
 
     @transaction.atomic
     def update(self, instance, validated_data):
         lineas = validated_data.pop("prescripciones", None)
+        validated_data.pop("cita", None)  # la cita solo se vincula al crear
         instance = super().update(instance, validated_data)
         if lineas is not None:
             # Mientras la consulta esté abierta, la fórmula se reemplaza completa.

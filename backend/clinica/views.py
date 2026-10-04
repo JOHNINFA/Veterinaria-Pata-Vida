@@ -133,9 +133,16 @@ class SolicitudCitaViewSet(mixins.CreateModelMixin, mixins.ListModelMixin,
         return SolicitudCitaSerializer if self.action == "create" else SolicitudCitaGestionSerializer
 
     def get_queryset(self):
-        qs = super().get_queryset()
-        estado = self.request.query_params.get("estado")
-        return qs.filter(estado=estado) if estado else qs
+        qs = super().get_queryset().select_related("paciente", "consulta")
+        params = self.request.query_params
+        if params.get("estado"):
+            qs = qs.filter(estado=params["estado"])
+        if params.get("fecha"):  # agenda del día
+            try:
+                qs = qs.filter(fecha_preferida=date.fromisoformat(params["fecha"])).order_by("creado")
+            except ValueError:
+                raise ValidationError({"fecha": "Usa el formato AAAA-MM-DD."})
+        return qs
 
 
 # --------------------------------------------------------------------------- #

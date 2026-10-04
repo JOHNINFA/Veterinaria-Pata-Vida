@@ -1,9 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { use, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ESPECIES, panelFetch, SEXOS, TIPOS_DOC, type Paciente, type Paginado, type Tutor } from "@/lib/clinica";
+import {
+  ESPECIES, panelFetch, SEXOS, TIPOS_DOC, type Paciente, type Paginado, type SolicitudCita, type Tutor,
+} from "@/lib/clinica";
 import { Aviso, Campo, claseBoton, claseBotonSecundario, claseInput, Encabezado, Tarjeta } from "@/components/panel/ui";
 
 const tutorVacio = { nombres: "", apellidos: "", tipo_documento: "CC", numero_documento: "", telefono: "",
@@ -11,8 +13,12 @@ const tutorVacio = { nombres: "", apellidos: "", tipo_documento: "CC", numero_do
 const pacienteVacio = { nombre: "", especie: "PERRO", raza: "", sexo: "M", fecha_nacimiento: "", color: "",
   microchip: "", esterilizado: false, alergias: "", observaciones: "" };
 
-export default function NuevoPacientePage() {
+const digitos = (tel: string) => tel.replace(/\D/g, "").slice(-10);
+
+export default function NuevoPacientePage({ searchParams }: { searchParams: Promise<{ cita?: string }> }) {
+  const { cita: citaId } = use(searchParams);
   const router = useRouter();
+  const [cita, setCita] = useState<SolicitudCita | null>(null);
   const [documento, setDocumento] = useState("");
   const [tutor, setTutor] = useState<Tutor | null>(null);
   const [crearTutor, setCrearTutor] = useState(false);
@@ -20,6 +26,30 @@ export default function NuevoPacientePage() {
   const [paciente, setPaciente] = useState(pacienteVacio);
   const [error, setError] = useState("");
   const [guardando, setGuardando] = useState(false);
+
+  // Si viene de la agenda, llenamos todo lo que ya sabemos por la cita.
+  useEffect(() => {
+    if (!citaId) return;
+    (async () => {
+      try {
+        const c = await panelFetch<SolicitudCita>(`clinica/solicitudes-cita/${citaId}`);
+        setCita(c);
+        setPaciente((p) => ({ ...p, nombre: c.nombre_mascota, especie: c.especie }));
+        // ¿El tutor ya existe? Lo buscamos por su celular.
+        const d = await panelFetch<Paginado<Tutor>>("clinica/tutores", { query: { search: digitos(c.telefono) } });
+        const existente = d.results.find((t) => digitos(t.telefono) === digitos(c.telefono));
+        if (existente) {
+          setTutor(existente);
+        } else {
+          const [nombres, ...apellidos] = c.nombre_tutor.trim().split(/\s+/);
+          setCrearTutor(true);
+          setNuevoTutor({ ...tutorVacio, nombres, apellidos: apellidos.join(" "), telefono: c.telefono, email: c.email });
+        }
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "No se pudo cargar la cita.");
+      }
+    })();
+  }, [citaId]);
 
   async function buscarTutor() {
     setError("");
@@ -51,7 +81,13 @@ export default function NuevoPacientePage() {
         method: "POST",
         body: { ...paciente, tutor: tutorId, fecha_nacimiento: paciente.fecha_nacimiento || null },
       });
-      router.push(`/panel/pacientes/${creado.id}`);
+      if (cita) {
+        // Queda vinculado a la cita y volvemos a la agenda para seguir con la consulta.
+        await panelFetch(`clinica/solicitudes-cita/${cita.id}`, { method: "PATCH", body: { paciente: creado.id } });
+        router.push(`/panel/agenda?fecha=${cita.fecha_preferida}`);
+      } else {
+        router.push(`/panel/pacientes/${creado.id}`);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "No se pudo guardar.");
       setGuardando(false);
@@ -72,6 +108,12 @@ export default function NuevoPacientePage() {
   return (
     <form onSubmit={guardar} className="space-y-6">
       <Encabezado titulo="Nuevo paciente" subtitulo="Primero identifica al tutor (propietario o responsable)." />
+      {cita && (
+        <Aviso tipo="info">
+          🗓️ Desde la cita de <strong>{cita.nombre_mascota}</strong> ({cita.nombre_tutor}). Ya llenamos lo que sabemos:
+          completa la <strong>cédula</strong> del tutor y confirma su <strong>autorización de datos</strong>.
+        </Aviso>
+      )}
 
       <Tarjeta titulo="1. Tutor">
         {tutor ? (
@@ -99,7 +141,7 @@ export default function NuevoPacientePage() {
 
         {crearTutor && !tutor && (
           <div className="mt-5 space-y-4 border-t pt-5">
-            <Aviso tipo="info">No hay un tutor con ese documento. Regístralo:</Aviso>
+            <Aviso tipo="info">{cita ? "Tutor nuevo. Revisa sus datos:" : "No hay un tutor con ese documento. Regístralo:"}</Aviso>
             <div className="grid gap-4 sm:grid-cols-2">
               <Campo label="Nombres"><input className={claseInput} required {...t("nombres")} /></Campo>
               <Campo label="Apellidos"><input className={claseInput} required {...t("apellidos")} /></Campo>
@@ -166,7 +208,7 @@ export default function NuevoPacientePage() {
         <button type="submit" disabled={guardando || (!tutor && !crearTutor)} className={claseBoton}>
           {guardando ? "Guardando..." : "Registrar paciente"}
         </button>
-        <Link href="/panel/pacientes" className={claseBotonSecundario}>Cancelar</Link>
+        <Link href={cita ? `/panel/agenda?fecha=${cita.fecha_preferida}` : "/panel/pacientes"} className={claseBotonSecundario}>Cancelar</Link>
       </div>
     </form>
   );

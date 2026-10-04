@@ -32,8 +32,8 @@ function aFormulario(c?: Consulta): Datos {
   return d;
 }
 
-export default function ConsultaForm({ pacienteId, inicial, alGuardar }: {
-  pacienteId: number; inicial?: Consulta; alGuardar: (c: Consulta) => void;
+export default function ConsultaForm({ pacienteId, inicial, citaId, alGuardar }: {
+  pacienteId: number; inicial?: Consulta; citaId?: number; alGuardar: (c: Consulta) => void;
 }) {
   const [datos, setDatos] = useState<Datos>(() => aFormulario(inicial));
   const [lineas, setLineas] = useState<Prescripcion[]>(inicial?.prescripciones ?? []);
@@ -56,6 +56,7 @@ export default function ConsultaForm({ pacienteId, inicial, alGuardar }: {
     setGuardando(true);
     // Los campos numéricos vacíos se envían como null (no como texto vacío).
     const cuerpo: Record<string, unknown> = { ...datos, paciente: pacienteId };
+    if (!inicial && citaId) cuerpo.cita = citaId; // la consulta queda ligada a la cita de la agenda
     for (const k of NUMERICOS) cuerpo[k] = datos[k] === "" ? null : datos[k];
     cuerpo.prescripciones = lineas
       .filter((l) => l.medicamento.trim())

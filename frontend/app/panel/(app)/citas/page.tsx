@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import {
   ESPECIES, fechaCorta, fechaHora, panelFetch, whatsappA, type Paginado, type SolicitudCita,
 } from "@/lib/clinica";
@@ -74,6 +75,10 @@ export default function CitasPage() {
                   className="rounded-full bg-[#25D366] px-4 py-2 text-xs font-bold text-white hover:bg-[#20bd5a]">
                   💬 WhatsApp
                 </a>
+                {s.estado === "CONFIRMADA" && (
+                  <Link href={`/panel/agenda?fecha=${s.fecha_preferida}`}
+                    className="rounded-full bg-brand px-4 py-2 text-xs font-bold text-white hover:bg-brand-dark">🗓️ Atender en la agenda</Link>
+                )}
                 {s.estado !== "CONFIRMADA" && (
                   <button onClick={() => cambiar(s, "CONFIRMADA")}
                     className="rounded-full bg-brand px-4 py-2 text-xs font-bold text-white hover:bg-brand-dark">✓ Confirmar</button>

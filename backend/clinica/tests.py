@@ -10,7 +10,7 @@ from django.core.cache import cache
 from django.utils import timezone
 from rest_framework.test import APITestCase
 
-from .models import Cobro, Consulta, Paciente, Preventivo, Servicio, Tutor, Veterinario
+from .models import Cobro, Consulta, Paciente, Preventivo, Servicio, SolicitudCita, Tutor, Veterinario
 from .permissions import GRUPO_RECEPCION, GRUPO_VETERINARIO
 
 API = "/api/clinica"
@@ -294,3 +294,64 @@ class CajaTests(BaseClinica):
         self.assertEqual(self.client.get(f"{API}/cobros/").status_code, 401)
         self.como(self.otro)
         self.assertEqual(self.client.get(f"{API}/cobros/").status_code, 403)
+
+
+class AgendaTests(BaseClinica):
+    def setUp(self):
+        super().setUp()
+        self.hoy = timezone.localdate()
+        self.tutor.telefono = "315 963 2585"
+        self.tutor.save()
+        self.cita = SolicitudCita.objects.create(
+            nombre_tutor="Ana", telefono="+57 3159632585", nombre_mascota="max", especie="PERRO",
+            fecha_preferida=self.hoy, acepta_datos=True, estado="CONFIRMADA",
+        )
+        SolicitudCita.objects.create(
+            nombre_tutor="Otro", telefono="300", nombre_mascota="Toby", especie="PERRO",
+            fecha_preferida=self.hoy + timedelta(days=1), acepta_datos=True, estado="CONFIRMADA",
+        )
+
+    def test_agenda_del_dia_y_paciente_sugerido(self):
+        self.como(self.recep)
+        r = self.client.get(f"{API}/solicitudes-cita/?estado=CONFIRMADA&fecha={self.hoy}")
+        self.assertEqual(r.data["count"], 1)
+        cita = r.data["results"][0]
+        # Mismo nombre y mismo celular (aunque escrito distinto) -> lo sugiere.
+        self.assertEqual(cita["paciente_sugerido"]["id"], self.paciente.id)
+        self.assertIsNone(cita["consulta"])
+        self.assertIsNone(cita["cobro"])
+
+    def test_flujo_completo_cita_consulta_cobro(self):
+        self.como(self.recep)
+        r = self.client.patch(f"{API}/solicitudes-cita/{self.cita.id}/", {"paciente": self.paciente.id}, format="json")
+        self.assertEqual(r.data["numero_historia"], self.paciente.numero_historia)
+
+        self.como(self.vet)
+        c = self.client.post(f"{API}/consultas/", {
+            "paciente": self.paciente.id, "motivo": "Vómito", "diagnostico": "Gastritis", "cita": self.cita.id,
+        }, format="json")
+        self.assertEqual(c.status_code, 201)
+        self.client.post(f"{API}/consultas/{c.data['id']}/cerrar/")
+
+        self.como(self.recep)
+        Servicio.objects.create(nombre="Urgencia", precio=90000)
+        self.client.post(f"{API}/cobros/", {"paciente": self.paciente.id, "consulta": c.data["id"],
+                                            "items": [{"servicio": Servicio.objects.get().id}]}, format="json")
+        cita = self.client.get(f"{API}/solicitudes-cita/{self.cita.id}/").data
+        self.assertEqual(cita["consulta"], c.data["id"])
+        self.assertTrue(cita["consulta_cerrada"])
+        self.assertEqual(cita["cobro"]["estado"], "PENDIENTE")
+        # Recepción ve el avance, pero no el diagnóstico.
+        self.assertNotIn("Gastritis", str(cita))
+
+        # Ya atendida: no se puede cambiar el paciente de la cita.
+        otro = Paciente.objects.create(tutor=self.tutor, nombre="Luna", especie="GATO", sexo="H")
+        r = self.client.patch(f"{API}/solicitudes-cita/{self.cita.id}/", {"paciente": otro.id}, format="json")
+        self.assertEqual(r.status_code, 400)
+
+    def test_consulta_con_cita_de_otro_paciente_es_rechazada(self):
+        self.como(self.vet)
+        r = self.client.post(f"{API}/consultas/", {
+            "paciente": self.paciente.id, "motivo": "x", "cita": self.cita.id,  # cita sin vincular
+        }, format="json")
+        self.assertEqual(r.status_code, 400)

@@ -121,6 +121,14 @@ export interface SolicitudCita {
   motivo: string;
   estado: "PENDIENTE" | "CONFIRMADA" | "CANCELADA";
   creado: string;
+  // Avance de la atención (agenda)
+  paciente: number | null;
+  paciente_nombre: string;
+  numero_historia: string;
+  consulta: number | null;
+  consulta_cerrada: boolean | null;
+  cobro: { id: number; estado: EstadoCobro; total: string } | null;
+  paciente_sugerido: { id: number; nombre: string; numero_historia: string } | null;
 }
 
 export interface HistoriaClinica extends Omit<Paciente, "tutor" | "tutor_nombre" | "tutor_telefono"> {

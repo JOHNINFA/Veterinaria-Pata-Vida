@@ -264,6 +264,13 @@ class SolicitudCita(models.Model):
     motivo = models.TextField(blank=True)
     acepta_datos = models.BooleanField(default=False)
     estado = models.CharField(max_length=10, choices=ESTADOS, default="PENDIENTE")
+    # Agenda: al atender la cita se vincula al paciente registrado y a su consulta.
+    paciente = models.ForeignKey(
+        Paciente, on_delete=models.SET_NULL, null=True, blank=True, related_name="citas"
+    )
+    consulta = models.ForeignKey(
+        Consulta, on_delete=models.SET_NULL, null=True, blank=True, related_name="citas"
+    )
     creado = models.DateTimeField(auto_now_add=True)
 
     class Meta:
