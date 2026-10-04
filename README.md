@@ -1,10 +1,21 @@
 # 🐾 PataVida — Ecommerce de Tienda y Veterinaria
 
-Tienda online full-stack para productos y servicios de mascotas: catálogo por
-categorías, carrito de compras y creación de pedidos. Construido como proyecto
-de portafolio con un stack profesional y desplegable.
+Tienda online full-stack para productos y servicios de mascotas, con un **panel
+clínico privado** para la veterinaria: agenda, historia clínica, fórmulas y caja.
+Proyecto de portafolio con datos ficticios.
 
 > **Stack:** Next.js (React) · Django REST Framework · PostgreSQL · Tailwind CSS
+
+## 🔗 Demo en vivo
+
+| | |
+|---|---|
+| 🛒 Tienda | https://veterinaria-pata-vida.vercel.app |
+| 🩺 Panel clínico | https://veterinaria-pata-vida.vercel.app/panel/login (botones de acceso demo) |
+| ⚙️ API | https://patavida-api.onrender.com/api/ |
+
+Cuentas demo (datos ficticios): `dra.laura` (veterinaria) y `recepcion` (recepción).
+El backend está en el plan gratis de Render: la primera visita tras un rato sin uso tarda ~50 s.
 
 ---
 
@@ -32,6 +43,8 @@ Panel privado para el equipo de la veterinaria, con roles (veterinario / recepci
   consultas firmadas y cobros pagados no se modifican, nada se borra, consentimiento de datos (Ley 1581)
 - ✅ 34 pruebas automáticas: `python manage.py test clinica`
 
+Detalle del flujo, roles y reglas: [docs/MODULO_CLINICO.md](docs/MODULO_CLINICO.md).
+
 > El recibo de caja no reemplaza la factura electrónica de la DIAN.
 
 ### Carrusel principal
@@ -54,14 +67,20 @@ Panel privado para el equipo de la veterinaria, con roles (veterinario / recepci
 ## 🏗️ Arquitectura
 
 ```
-┌──────────────┐      HTTP/JSON      ┌──────────────┐      ┌────────────┐
-│   Next.js    │  ───────────────▶   │  Django REST │ ───▶ │ PostgreSQL │
-│  (frontend)  │  ◀───────────────   │    (API)     │      │            │
-└──────────────┘                     └──────────────┘      └────────────┘
-   Catálogo, carrito                  /api/productos           Productos
-   y checkout                         /api/categorias          Categorías
-                                      /api/pedidos             Pedidos
+   Navegador
+       │
+       ▼
+┌────────────────────┐   HTTP/JSON   ┌────────────────────┐        ┌──────────────┐
+│ Next.js · Vercel   │ ────────────▶ │ Django REST·Render │ ─────▶ │ PostgreSQL   │
+│ tienda + panel     │ ◀──────────── │ /api/productos     │        │ Neon         │
+│ /api/panel/* (BFF) │               │ /api/pedidos       │        │ (us-east-2)  │
+└────────────────────┘               │ /api/clinica/*     │        └──────────────┘
+                                     └────────────────────┘
 ```
+
+- **Panel clínico**: el navegador nunca ve el JWT. Next.js guarda los tokens en cookies
+  `httpOnly` y reenvía las llamadas a Django desde `/api/panel/*` (patrón BFF), con
+  verificación de origen y una lista blanca de rutas.
 
 - **Frontend** (`/frontend`): Next.js App Router. Los datos se piden a la API
   desde Server Components; el carrito es un Context de React sobre localStorage.
@@ -88,6 +107,7 @@ python3 -m venv venv
 ./venv/bin/pip install -r requirements.txt
 ./venv/bin/python manage.py migrate
 ./venv/bin/python manage.py seed          # carga productos de ejemplo
+./venv/bin/python manage.py seed_clinica  # usuarios demo, pacientes, servicios y cobros ficticios
 ./venv/bin/python manage.py createsuperuser  # (opcional) para el admin
 ./venv/bin/python manage.py runserver     # http://localhost:8000
 ```
@@ -113,6 +133,11 @@ npm run dev                                # http://localhost:3000
 | **Carrito en localStorage** | El usuario no pierde su carrito al recargar; no requiere login. |
 | **PostgreSQL con fallback a SQLite** | Producción robusta, pero cualquiera puede clonar y correr sin instalar Postgres. |
 | **Server Components para datos** | El catálogo se renderiza en el servidor: más rápido y mejor SEO. |
+| **JWT en cookie httpOnly + BFF** | El token del panel no queda expuesto a JavaScript (XSS). |
+| **Roles con Grupos de Django** | Recepción gestiona citas, pacientes y caja; solo el veterinario ve y escribe la historia clínica. |
+| **Sin DELETE en lo clínico** | Historias, consultas y cobros se conservan; lo equivocado se anula con motivo. |
+| **Correo por API HTTP (Brevo)** | Render gratis bloquea los puertos SMTP. |
+| **`useSearchParams` en páginas del panel** | Las páginas se generan estáticas; el prop `searchParams` llegaba vacío en producción. |
 | **Punto focal por banner** | Cada imagen conserva un encuadre útil en móvil y escritorio aunque el contenedor use `object-cover`. |
 
 ---
@@ -124,9 +149,12 @@ patavida-ecommerce/
 ├── backend/
 │   ├── config/          # settings, urls
 │   ├── productos/       # modelos Categoría/Producto + API + seed
-│   └── pedidos/         # modelos Pedido/ItemPedido + API
+│   ├── pedidos/         # modelos Pedido/ItemPedido + API
+│   └── clinica/         # historia clínica, agenda, caja, correo, seed_clinica, tests
 └── frontend/
-    ├── app/             # home, productos, detalle, carrito, contacto y quiénes somos
+    ├── app/(tienda)/    # home, productos, detalle, carrito, veterinaria, contacto...
+    ├── app/panel/       # panel clínico: agenda, pacientes, consultas, caja
+    ├── app/api/panel/   # BFF: login, logout y proxy hacia /api/clinica
     ├── components/      # Navbar, HeroCarousel, ProductCard, CartDrawer...
     ├── context/         # CartContext (estado del carrito)
     ├── lib/             # api.ts, contact.ts, types.ts
