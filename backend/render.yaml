@@ -3,6 +3,7 @@ services:
     name: patavida-api
     runtime: python
     plan: free
+    region: ohio  # misma región que la base de datos de Neon (AWS us-east-2)
     rootDir: backend
     buildCommand: ./build.sh
     startCommand: gunicorn config.wsgi:application
